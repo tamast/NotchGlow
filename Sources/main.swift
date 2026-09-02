@@ -75,36 +75,92 @@ func notchRect(for screen: NSScreen) -> NSRect? {
     return NSRect(x: x, y: screen.frame.maxY - height, width: width, height: height)
 }
 
-func notchScreen() -> (NSScreen, NSRect)? {
+func notchScreen() -> (NSScreen, NSRect, isFake: Bool)? {
     for screen in NSScreen.screens {
-        if let rect = notchRect(for: screen) { return (screen, rect) }
+        if let rect = notchRect(for: screen) { return (screen, rect, false) }
     }
-    return nil
+    // Clamshell / no notch: fake notch centered at top edge of the main external screen.
+    guard let screen = NSScreen.screens.first(where: { !isBuiltin($0) }) ?? NSScreen.main ?? NSScreen.screens.first
+    else { return nil }
+    return (screen, fakeNotchRect(for: screen), true)
+}
+
+func isBuiltin(_ screen: NSScreen) -> Bool {
+    guard #available(macOS 12.0, *),
+          let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+    else { return false }
+    return CGDisplayIsBuiltin(id) != 0
+}
+
+/// Returns a fake notch rectangle hanging from the top edge, centered, sized like a real notch.
+func fakeNotchRect(for screen: NSScreen) -> NSRect {
+    let f = screen.frame
+    let width = min(max(f.width / 9.6, 160), 300)
+    let height = width * 0.17
+    return NSRect(x: f.midX - width / 2, y: f.maxY - height, width: width, height: height)
 }
 
 // MARK: - Overlay view
+
+/// Rounded rect path; when bottomOnly, top corners stay square (fake notch flush with screen edge).
+private func roundedPath(_ rect: NSRect, radius: CGFloat, bottomOnly: Bool) -> NSBezierPath {
+    guard bottomOnly else {
+        return NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
+    }
+    let r = min(radius, min(rect.width, rect.height) / 2)
+    let path = NSBezierPath()
+    path.move(to: NSPoint(x: rect.minX, y: rect.maxY))
+    path.line(to: NSPoint(x: rect.minX, y: rect.minY + r))
+    path.appendArc(withCenter: NSPoint(x: rect.minX + r, y: rect.minY + r),
+                   radius: r, startAngle: 180, endAngle: 270)
+    path.line(to: NSPoint(x: rect.maxX - r, y: rect.minY))
+    path.appendArc(withCenter: NSPoint(x: rect.maxX - r, y: rect.minY + r),
+                   radius: r, startAngle: 270, endAngle: 360)
+    path.line(to: NSPoint(x: rect.maxX, y: rect.maxY))
+    return path
+}
 
 final class NotchBorderView: NSView {
     var color: NSColor?
     var notch: NSRect = .zero {
         didSet { needsDisplay = true }
     }
+    var isFake = false {
+        didSet { needsDisplay = true }
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         guard let color = color, !notch.isEmpty else { return }
-        // Notch rectangle is in screen coords; convert to view (window) coords.
-        let rect = notch.insetBy(dx: -2.5, dy: -2.5)
-        let radius: CGFloat = 9
-        let path = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
-        path.lineWidth = 5
-        // Outer glow pass
-        color.withAlphaComponent(0.35).setStroke()
-        let glow = NSBezierPath(roundedRect: notch.insetBy(dx: -5.5, dy: -5.5), xRadius: 12, yRadius: 12)
-        glow.lineWidth = 2
-        glow.stroke()
-        // Main border
-        color.setStroke()
-        path.stroke()
+        // Notch rectangle is in screen coords, matching the window frame.
+        let main = notch.insetBy(dx: -2.5, dy: -2.5)
+        // Fake notch hugs the top edge: don't inflate past screen top.
+        let glowRect = isFake
+            ? NSRect(x: notch.minX - 5.5, y: notch.minY - 5.5, width: notch.width + 11, height: notch.height + 5.5)
+            : notch.insetBy(dx: -5.5, dy: -5.5)
+        let mainRect = isFake
+            ? NSRect(x: notch.minX - 2.5, y: notch.minY - 2.5, width: notch.width + 5, height: notch.height + 2.5)
+            : main
+        if isFake {
+            // Fake notch: solid color fill so the pill itself carries the status,
+            // plus a soft halo underneath.
+            color.withAlphaComponent(0.35).setStroke()
+            let glow = roundedPath(glowRect, radius: 12, bottomOnly: true)
+            glow.lineWidth = 3
+            glow.stroke()
+            color.setFill()
+            roundedPath(notch, radius: 9, bottomOnly: true).fill()
+        } else {
+            // Outer glow pass
+            color.withAlphaComponent(0.35).setStroke()
+            let glow = roundedPath(glowRect, radius: 12, bottomOnly: false)
+            glow.lineWidth = 2
+            glow.stroke()
+            // Main border
+            color.setStroke()
+            let path = roundedPath(mainRect, radius: 9, bottomOnly: false)
+            path.lineWidth = 5
+            path.stroke()
+        }
     }
 }
 
@@ -122,10 +178,11 @@ final class OverlayWindowController {
     }
 
     private func update() {
-        guard let color = color, let (screen, notch) = notchScreen() else {
+        guard let color = color, let target = notchScreen() else {
             window?.orderOut(nil)
             return
         }
+        let (screen, notch, isFake) = target
         let frame = screen.frame
         if window == nil {
             let w = NSWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
@@ -142,7 +199,10 @@ final class OverlayWindowController {
         window?.setFrame(frame, display: true)
         borderView.frame = NSRect(origin: .zero, size: frame.size)
         borderView.color = color
-        borderView.notch = notch
+        // Notch rect is in global screen coords; convert to view coords (window origin = screen origin).
+        borderView.notch = NSRect(x: notch.minX - frame.minX, y: notch.minY - frame.minY,
+                                  width: notch.width, height: notch.height)
+        borderView.isFake = isFake
         window?.orderFrontRegardless()
     }
 }

@@ -2,6 +2,10 @@
 
 Menu-bar app that draws a colored rounded rectangle around the MacBook notch, driven by a color read from a watched file. Works on any MacBook with a notch (14", 16") — geometry is detected at runtime via `NSScreen.auxiliaryTopLeftArea` / `safeAreaInsets`.
 
+## Clamshell / external monitors
+
+With the lid closed or on a screen without a notch, NotchGlow falls back to a fake notch: a solid color-filled pill hanging from the top-center edge of the external display (bottom corners rounded, sized like a real notch). Real notch always wins when present.
+
 ## Colors
 
 File content (case-insensitive, whitespace ignored):

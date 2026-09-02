@@ -45,7 +45,7 @@ There is no test suite. Verification workflow used so far:
 ## Architecture notes
 
 - Single overlay `NSWindow` covering the full screen frame (borderless, transparent, `ignoresMouseEvents`, level = `.maximumWindow`, `canJoinAllSpaces`). Full-screen window avoids repositioning logic; the view just draws the border at the notch rect.
-- Notch detection: screen where `safeAreaInsets.top > 0`. Handles 14"/16" automatically. If no notch found, window hides.
+- Notch detection: screen where `safeAreaInsets.top > 0`. Handles 14"/16" automatically. If no notch found, falls back to a **fake notch** (`fakeNotchRect(for:)`): top-center pill on the first non-builtin screen (detected via `CGDisplayIsBuiltin` on `NSScreenNumber`), width = screen/9.6 clamped 160…300pt, height = width × 0.17. The fake notch is drawn as a solid color fill (bottom corners rounded only, top flush with screen edge via `roundedPath(_:radius:bottomOnly:)`) plus a soft halo — the real-notch border style strokes, the fake one fills. If no screen at all is found, window hides.
 - Border is inset by −2.5pt around the notch rect with lineWidth 5, plus a softer outer glow pass at −5.5pt. Top edge of the border lands above the screen top (notch touches screen edge), so only left/right/bottom sides are visible — that is intentional, not a bug.
 - Polling: `Timer` reads the file, compares raw content to skip redundant redraws. Unrecognized non-empty content logs to stderr and keeps the current state; `CLEAR`/`NONE`/`OFF`/empty hides the border.
 - Colors: named (`RED/GREEN/YELLOW/ORANGE/BLUE/PURPLE`, case-insensitive) or `#RRGGBB`. Add new names in `parseColor(_:)`.
@@ -57,7 +57,7 @@ There is no test suite. Verification workflow used so far:
 
 - **macOS 12+ APIs only** (`auxiliaryTopLeftArea`, `safeAreaInsets`) — build target is pinned to `arm64-apple-macosx12.0` in the Makefile.
 - `NSMenuItem(title:action:keyEquivalent:)` has **no `target:` parameter** — set `item.target = self` separately.
-- Screen-coordinate vs view-coordinate math lives in `NotchBorderView.draw` — it assumes the window frame exactly equals the screen frame. Keep that invariant if you change window setup.
+- Screen-coordinate vs view-coordinate conversion lives in `OverlayWindowController.update()` — notch rects are global screen coords, the view draws in window coords, so rects are translated by `−screen.frame.origin` (matters for external screens at nonzero origins). The view assumes the window frame exactly equals the screen frame. Keep those invariants if you change window setup.
 - Swift 6 toolchain — keep code clean of strict-concurrency warnings if adding actors/async.
 
 ## Roadmap (not yet done)
