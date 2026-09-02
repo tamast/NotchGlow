@@ -92,11 +92,11 @@ func isBuiltin(_ screen: NSScreen) -> Bool {
     return CGDisplayIsBuiltin(id) != 0
 }
 
-/// Returns a fake notch rectangle hanging from the top edge, centered, sized like a real notch.
+/// Returns a fake notch rectangle: a thin line hanging from the top edge, centered.
 func fakeNotchRect(for screen: NSScreen) -> NSRect {
     let f = screen.frame
     let width = min(max(f.width / 9.6, 160), 300)
-    let height = width * 0.17
+    let height: CGFloat = 4
     return NSRect(x: f.midX - width / 2, y: f.maxY - height, width: width, height: height)
 }
 
@@ -132,24 +132,13 @@ final class NotchBorderView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let color = color, !notch.isEmpty else { return }
         // Notch rectangle is in screen coords, matching the window frame.
-        let main = notch.insetBy(dx: -2.5, dy: -2.5)
-        // Fake notch hugs the top edge: don't inflate past screen top.
-        let glowRect = isFake
-            ? NSRect(x: notch.minX - 5.5, y: notch.minY - 5.5, width: notch.width + 11, height: notch.height + 5.5)
-            : notch.insetBy(dx: -5.5, dy: -5.5)
-        let mainRect = isFake
-            ? NSRect(x: notch.minX - 2.5, y: notch.minY - 2.5, width: notch.width + 5, height: notch.height + 2.5)
-            : main
         if isFake {
-            // Fake notch: solid color fill so the pill itself carries the status,
-            // plus a soft halo underneath.
-            color.withAlphaComponent(0.35).setStroke()
-            let glow = roundedPath(glowRect, radius: 12, bottomOnly: true)
-            glow.lineWidth = 3
-            glow.stroke()
+            // Fake notch: a simple solid line, no border or halo.
             color.setFill()
             roundedPath(notch, radius: 9, bottomOnly: true).fill()
         } else {
+            let mainRect = notch.insetBy(dx: -2.5, dy: -2.5)
+            let glowRect = notch.insetBy(dx: -5.5, dy: -5.5)
             // Outer glow pass
             color.withAlphaComponent(0.35).setStroke()
             let glow = roundedPath(glowRect, radius: 12, bottomOnly: false)
