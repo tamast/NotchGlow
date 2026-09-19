@@ -12,5 +12,8 @@ build/
 .idea/
 .vscode/
 
+# Plugin dependencies
+plugins/*/node_modules/
+
 # Local color file (user state, not project)
 .notch-color

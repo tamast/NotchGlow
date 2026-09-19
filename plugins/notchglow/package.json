@@ -1,0 +1,13 @@
+{
+  "name": "notchglow",
+  "private": true,
+  "type": "module",
+  "main": "index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./tui": "./tui.ts"
+  },
+  "dependencies": {
+    "@opencode/plugin": "^2.0.8"
+  }
+}

@@ -11,6 +11,7 @@ Guidance for AI agents (Claude Code, opencode, etc.) working in this repository.
 ```
 Sources/main.swift   — entire app (~250 lines, single file, no dependencies)
 Sources/render-icon.swift — standalone script that renders the 1024px app icon PNG
+plugins/notchglow/   — OpenCode V2 plugin (server: `index.ts`, TUI exit hook: `tui.ts`, needs `npm install` for @opencode/plugin)
 Info.plist           — app bundle manifest (LSUIElement: no dock icon)
 Makefile             — builds build/NotchGlow.app with swiftc, no Xcode project
 README.md            — user-facing docs
@@ -62,5 +63,14 @@ There is no test suite. Verification workflow used so far:
 
 ## Roadmap (not yet done)
 
-- Claude Code / opencode hooks that write `RED`/`YELLOW`/`GREEN`/`CLEAR` to the watched file (separate task, likely lives in user hook config, not this repo).
+- Claude Code hooks that write `RED`/`YELLOW`/`GREEN`/`CLEAR` to the watched file (the OpenCode side is done: `plugins/notchglow/`, installed globally to `~/.config/opencode/plugins/notchglow/`).
 - Possible additions: custom colors via CLI flags, per-display overlays, login-item packaging.
+
+## OpenCode plugin (`plugins/notchglow/`)
+
+V2 plugin (`Plugin.define`, `@opencode/plugin`) subscribing to the server event stream and writing the color file. Companion TUI plugin `tui.ts` (`@opencode/plugin/tui`, exposed via the `./tui` export in package.json) writes `CLEAR` when the TUI exits — the server plugin runs in the background service, which outlives the TUI, so it never sees the quit. Gotchas:
+
+- **Discovery**: a root-level `plugins/` dir is NOT auto-discovered — only `.opencode/plugins/` per project or `~/.config/opencode/plugins/` globally. The global copy is the live one; this repo is the source of truth. Reinstall after edits: `npm install --prefix plugins/notchglow && cp -r plugins/notchglow ~/.config/opencode/plugins/ && opencode api post /api/location/reload --data '{}'`.
+- `@opencode/plugin` must resolve from the plugin directory (node_modules), otherwise load fails with `Cannot find package '@opencode/plugin'`.
+- Event payloads carry the session id at `event.data.sessionID`, not `event.sessionID`. Real lifecycle events: `session.execution.started|succeeded|failed|interrupted`, `permission.asked|replied`.
+- Debug loads: `grep notchglow ~/.local/share/opencode/log/opencode.log`, check state via `opencode api get /api/plugin`.
