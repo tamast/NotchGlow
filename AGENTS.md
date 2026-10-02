@@ -51,6 +51,7 @@ There is no test suite. Verification workflow used so far:
 - Polling: `Timer` reads the file, compares raw content to skip redundant redraws. Unrecognized non-empty content logs to stderr and keeps the current state; `CLEAR`/`NONE`/`OFF`/empty hides the border.
 - Colors: named (`RED/GREEN/YELLOW/ORANGE/BLUE/PURPLE`, case-insensitive) or `#RRGGBB`. Add new names in `parseColor(_:)`.
 - Config: CLI args `--file` / `--interval` (`Config.fromArgs`). Interval also changeable live from the menu. Persisted preferences do not exist.
+- Blinking: while a color is set, the overlay toggles hidden/visible every 0.6s (`blinkTimer` in `AppDelegate`, `OverlayWindowController.setBlink(hidden:)`). Default off; toggle via the "Blinking" menu item. When off or no color set, the blink phase resets to visible.
 - App icon: `render-icon.swift` generates `build/icon-1024.png`; Makefile turns it into `AppIcon.icns` via `sips`+`iconutil` and bundles it (`CFBundleIconFile` in Info.plist). Edit the Swift script, then `rm build/icon-1024.png && make` to regenerate.
 - Repositioning on display changes via `NSApplication.didChangeScreenParametersNotification`.
 
@@ -66,7 +67,9 @@ There is no test suite. Verification workflow used so far:
 - Claude Code hooks that write `RED`/`YELLOW`/`GREEN`/`CLEAR` to the watched file (the OpenCode side is done: `plugins/notchglow/`, installed globally to `~/.config/opencode/plugins/notchglow/`).
 - Possible additions: custom colors via CLI flags, per-display overlays, login-item packaging.
 
-## OpenCode plugin (`plugins/notchglow/`)
+## OpenCode plugins
+
+### V2 plugin (`plugins/notchglow/`)
 
 V2 plugin (`Plugin.define`, `@opencode/plugin`) subscribing to the server event stream and writing the color file. Companion TUI plugin `tui.ts` (`@opencode/plugin/tui`, exposed via the `./tui` export in package.json) writes `CLEAR` when the TUI exits — the server plugin runs in the background service, which outlives the TUI, so it never sees the quit. Gotchas:
 
@@ -74,3 +77,15 @@ V2 plugin (`Plugin.define`, `@opencode/plugin`) subscribing to the server event 
 - `@opencode/plugin` must resolve from the plugin directory (node_modules), otherwise load fails with `Cannot find package '@opencode/plugin'`.
 - Event payloads carry the session id at `event.data.sessionID`, not `event.sessionID`. Real lifecycle events: `session.execution.started|succeeded|failed|interrupted`, `permission.asked|replied`.
 - Debug loads: `grep notchglow ~/.local/share/opencode/log/opencode.log`, check state via `opencode api get /api/plugin`.
+
+### V1 plugin (`plugins/notchglow-v1/notchglow.ts`)
+
+Single dependency-free file for OpenCode v1 (tested on 1.18.x). Plain plugin function (no `Plugin.define`, no `@opencode-ai/plugin` import — the type import is commented out so it loads without node_modules). Install: `cp plugins/notchglow-v1/notchglow.ts ~/.config/opencode/plugins/notchglow.ts` — v1 auto-discovers `*.{ts,js}` one level deep in `plugin(s)/` under each config dir (`~/.config/opencode`, project `.opencode/`).
+
+Differences from V2:
+
+- V1 has no `session.execution.*` events. Mapping: busy ← `session.status` (`status.type: "busy"|"retry"`), done ← `session.idle`, failed/interrupted ← `session.error` (covers abort via `MessageAbortedError`), permission asked ← `permission.updated` (v1.18; some versions may use `permission.asked` — check the SDK `Event` union if RED never fires).
+- Events arrive via an `event` hook `{ event: { type, properties } }` pushed to every hook; session id lives at `event.properties.sessionID`.
+- No companion TUI plugin needed: v1 has a `dispose` hook that fires when the server instance shuts down, and the plugin writes `CLEAR` there (verified working after `opencode run` exits).
+- Options (custom file path) not wired — edit `DEFAULT_FILE` in the file. V1 passes `options` as second arg to the plugin function (`Plugin = (input, options?) => Promise<Hooks>`) if ever needed.
+- Verification without the app: run `opencode run "..."` while polling `~/.notch-color`; transitions seen live: CLEAR → YELLOW (busy) → GREEN (idle) → CLEAR (dispose). Headless `opencode run` auto-rejects permissions instantly, so RED is hard to catch there — simulate `permission.updated`/`permission.replied` directly to unit-test the RED path.

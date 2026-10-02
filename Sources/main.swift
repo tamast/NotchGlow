@@ -158,12 +158,18 @@ final class NotchBorderView: NSView {
 final class OverlayWindowController {
     private var window: NSWindow?
     private let borderView = NotchBorderView(frame: .zero)
+    private var blinkHidden = false
     private(set) var color: NSColor? {
         didSet { update() }
     }
 
     func set(color: NSColor?) {
         self.color = color
+    }
+
+    func setBlink(hidden: Bool) {
+        blinkHidden = hidden
+        update()
     }
 
     private func update() {
@@ -192,7 +198,11 @@ final class OverlayWindowController {
         borderView.notch = NSRect(x: notch.minX - frame.minX, y: notch.minY - frame.minY,
                                   width: notch.width, height: notch.height)
         borderView.isFake = isFake
-        window?.orderFrontRegardless()
+        if blinkHidden {
+            window?.orderOut(nil)
+        } else {
+            window?.orderFrontRegardless()
+        }
     }
 }
 
@@ -206,10 +216,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var currentColorName: String = "—"
     private var lastRaw: String?
     private var intervalItem: NSMenuItem?
+    private var blinkItem: NSMenuItem?
+    private var blinkEnabled = false
+    private var blinkOn = true
+    private var blinkTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusItem()
         startTimer()
+        startBlinkTimer()
         poll()
 
         NotificationCenter.default.addObserver(
@@ -222,6 +237,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func screenParametersChanged() {
         overlay.set(color: overlay.color)
+    }
+
+    private func startBlinkTimer() {
+        blinkTimer?.invalidate()
+        blinkTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: true) { [weak self] _ in
+            self?.blinkTick()
+        }
+    }
+
+    private func blinkTick() {
+        guard blinkEnabled, overlay.color != nil else {
+            if !blinkOn {
+                blinkOn = true
+                overlay.setBlink(hidden: false)
+            }
+            return
+        }
+        blinkOn.toggle()
+        overlay.setBlink(hidden: !blinkOn)
     }
 
     private func startTimer() {
@@ -276,6 +310,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         intervalItem?.submenu = intervalMenu
         menu.addItem(intervalItem!)
 
+        blinkItem = NSMenuItem(title: "Blinking", action: #selector(toggleBlink(_:)), keyEquivalent: "")
+        blinkItem?.target = self
+        blinkItem?.state = blinkEnabled ? .on : .off
+        menu.addItem(blinkItem!)
+
         menu.addItem(NSMenuItem.separator())
         let quitItem = NSMenuItem(title: "Quit NotchGlow", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
@@ -288,6 +327,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         config.interval = seconds
         intervalItem?.submenu?.items.forEach { $0.state = ($0 == sender) ? .on : .off }
         startTimer()
+    }
+
+    @objc private func toggleBlink(_ sender: NSMenuItem) {
+        blinkEnabled.toggle()
+        sender.state = blinkEnabled ? .on : .off
+        if !blinkEnabled {
+            blinkOn = true
+            overlay.setBlink(hidden: false)
+        }
     }
 
     @objc private func quit() {

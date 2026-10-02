@@ -41,18 +41,35 @@ Launch at login: add `NotchGlow.app` to System Settings → General → Login It
 
 ## OpenCode / agent hooks
 
-This repo ships an OpenCode V2 plugin at `plugins/notchglow/index.ts` that subscribes to the server event stream and writes the watched file:
+Two OpenCode plugins ship in this repo — pick the one matching your OpenCode version. Both write the same signals to the watched file:
 
 - `YELLOW` — an agent turn is running (working)
 - `RED` — a permission is waiting for your approval
 - `GREEN` — the last turn finished successfully
 - `CLEAR` — the turn failed or was interrupted (glow hidden)
 
-The plugin also ships a companion TUI plugin (`plugins/notchglow/tui.ts`, auto-loaded via the `./tui` package export) that writes `CLEAR` when you quit OpenCode — the server plugin itself runs in the long-lived background service and never sees the TUI exit.
-
 With multiple sessions running in parallel, the most recent signal wins.
 
-### Install globally (all projects)
+### OpenCode v1 (`plugins/notchglow-v1/notchglow.ts`)
+
+Single dependency-free file, tested on OpenCode 1.18.x. Install by copying it into the auto-discovered global plugins directory:
+
+```sh
+mkdir -p ~/.config/opencode/plugins
+cp plugins/notchglow-v1/notchglow.ts ~/.config/opencode/plugins/
+```
+
+Restart OpenCode (or start a new session). No `npm install`, no config entry — v1 auto-discovers `*.ts` / `*.js` files one level deep in `~/.config/opencode/plugins/`. To uninstall: delete the copied file.
+
+The plugin is a server-kind plugin: it won't appear in the TUI plugin list (that panel only shows TUI-kind plugins), but it drives the color file in both `opencode run` and the TUI. It also writes `CLEAR` when the OpenCode instance shuts down, so the glow never gets stuck on.
+
+The watched file defaults to `~/.notch-color`; to change it, edit `DEFAULT_FILE` at the top of the plugin file.
+
+### OpenCode v2 (`plugins/notchglow/`)
+
+V2 plugin at `plugins/notchglow/index.ts` that subscribes to the server event stream. It also ships a companion TUI plugin (`plugins/notchglow/tui.ts`, auto-loaded via the `./tui` package export) that writes `CLEAR` when you quit OpenCode — the v2 server plugin runs in the long-lived background service and never sees the TUI exit.
+
+#### Install globally (all projects)
 
 Install its dependency, then copy it into OpenCode's auto-discovered global plugins directory:
 
